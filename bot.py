@@ -14,6 +14,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Commands:\n/start - welcome message\n/help - this menu")
 
 CUSTOMER, SERVICE, AMOUNT = range(3)
+CUST_NAME, CUST_PHONE, CUST_EMAIL, CUST_ADDRESS = range(3, 7)
 
 async def invoice_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Let's create an invoice.\n\nCustomer name?")
@@ -23,7 +24,6 @@ async def get_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["customer"] = update.message.text
     await update.message.reply_text("Service?")
     return SERVICE
-
 async def get_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["service"] = update.message.text
     await update.message.reply_text("Amount?")
@@ -37,6 +37,17 @@ def save_invoice(invoice_number, date, customer, service, amount):
         if not file_exists:
             writer.writerow(["Invoice #", "Date", "Customer", "Service", "Amount"])
         writer.writerow([invoice_number, date, customer, service, amount])
+def save_invoice(invoice_number, date, customer, service, amount):
+    ...
+    writer.writerow([invoice_number, date, customer, service, amount])
+
+def save_customer(name, phone, email, address):
+    file_exists = os.path.exists("customers.csv")
+    with open("customers.csv", "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["Name", "Phone", "Email", "Address"])
+        writer.writerow([name, phone, email, address])
 async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["amount"] = update.message.text
     data = context.user_data
@@ -174,7 +185,37 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Invoice cancelled.")
     return ConversationHandler.END
+  async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Invoice cancelled.")
+    return ConversationHandler.END
 
+# ---- PASTE ALL THE NEW CUSTOMER FUNCTIONS HERE ----
+async def addcustomer_start(update, context):
+    ...
+async def get_cust_name(update, context):
+    ...
+async def get_cust_phone(update, context):
+    ...
+async def get_cust_email(update, context):
+    ...
+async def get_cust_address(update, context):
+    ...
+
+addcustomer_handler = ConversationHandler(
+    ...
+)
+
+async def list_customers(update, context):
+    ...
+
+async def customer_detail(update, context):
+    ...
+# ---- END OF NEW CODE ----
+
+invoice_handler = ConversationHandler(
+    entry_points=[CommandHandler("invoice", invoice_start)],
+    ...
+)
 invoice_handler = ConversationHandler(
     entry_points=[CommandHandler("invoice", invoice_start)],
     states={
@@ -186,6 +227,9 @@ invoice_handler = ConversationHandler(
 )
 
 app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(addcustomer_handler)
+app.add_handler(CommandHandler("customers", list_customers))
+app.add_handler(CommandHandler("customer", customer_detail))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("help", help_command))
 app.add_handler(invoice_handler)
