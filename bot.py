@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters, ConversationHandler
 from fpdf import FPDF
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("8772713813:AAFcNvQL63gNZKtvyJjj_WqgtmJLSWZ2zc8")
 
 # ---------------- BASIC COMMANDS ----------------
 
