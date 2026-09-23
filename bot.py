@@ -284,6 +284,127 @@ async def customer_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg)
 
+# ---------------- PAYMENTS & BALANCES ----------------
+
+PAY_INVOICE, PAY_AMOUNT = range(7, 9)
+
+def save_payment(invoice_number, date, amount):
+    file_exists = os.path.exists("payments.csv")
+    with open("payments.csv", "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["Invoice #", "Date", "Amount Paid"])
+        writer.writerow([invoice_number, date, amount])
+
+async def payment_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Let's record a payment.\n\nWhich invoice number? (e.g. INV-2026-123)")
+    return PAY_INVOICE
+
+async def get_pay_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["pay_invoice"] = update.message.text.strip()
+    await update.message.reply_text("Amount paid?")
+    return PAY_AMOUNT
+
+async def get_pay_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["pay_amount"] = update.message.text.strip()
+    data = context.user_data
+
+    today = datetime.date.today().strftime("%b %d, %Y")
+    save_payment(data["pay_invoice"], today, data["pay_amount"])
+
+    await update.message.reply_text(
+        f"✅ Payment recorded:\n\nInvoice: {data['pay_invoice']}\nAmount: {data['pay_amount']} ETB"
+    )
+    return ConversationHandler.END
+
+payment_handler = ConversationHandler(
+    entry_points=[CommandHandler("payment", payment_start)],
+    states={
+        PAY_INVOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_pay_invoice)],
+        PAY_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_pay_amount)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+def get_customer_totals(name):
+    """Returns (total_billed, total_paid, invoice_numbers_list) for a customer name."""
+    total_billed = 0
+    invoice_numbers = []
+
+    if os.path.exists("invoices.csv"):
+        with open("invoices.csv", "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["Customer"].strip().lower() == name.strip().lower():
+                    try:
+                        total_billed += float(row["Amount"].replace(",", ""))
+                    except ValueError:
+                        pass
+                    invoice_numbers.append(row["Invoice #"])
+
+    total_paid = 0
+    if os.path.exists("payments.csv"):
+        with open("payments.csv", "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["Invoice #"] in invoice_numbers:
+                    try:
+                        total_paid += float(row["Amount Paid"].replace(",", ""))
+                    except ValueError:
+                        pass
+
+    return total_billed, total_paid, invoice_numbers
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /balance Customer Name")
+        return
+
+    name = " ".join(context.args)
+    total_billed, total_paid, invoice_numbers = get_customer_totals(name)
+
+    if not invoice_numbers:
+        await update.message.reply_text(f"No invoices found for '{name}'.")
+        return
+
+    remaining = total_billed - total_paid
+
+    await update.message.reply_text(
+        f"💰 {name}\n\n"
+        f"Total billed: {total_billed:,.0f} ETB\n"
+        f"Total paid: {total_paid:,.0f} ETB\n"
+        f"Balance: {remaining:,.0f} ETB"
+    )
+
+async def outstanding(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.exists("customers.csv"):
+        await update.message.reply_text("No customers yet.")
+        return
+
+    lines = ["🔴 Outstanding Customers\n"]
+    grand_total = 0
+    found_any = False
+
+    with open("customers.csv", "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = row["Name"]
+            total_billed, total_paid, invoice_numbers = get_customer_totals(name)
+            if not invoice_numbers:
+                continue
+            remaining = total_billed - total_paid
+            if remaining > 0:
+                found_any = True
+                grand_total += remaining
+                lines.append(f"{name}   {remaining:,.0f} ETB")
+
+    if not found_any:
+        await update.message.reply_text("No outstanding balances. 🎉")
+        return
+
+    lines.append(f"\nTotal Outstanding: {grand_total:,.0f} ETB")
+    await update.message.reply_text("\n".join(lines))
+
 # ---------------- APP SETUP ----------------
 
 app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -291,8 +412,11 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("help", help_command))
 app.add_handler(invoice_handler)
 app.add_handler(addcustomer_handler)
+app.add_handler(payment_handler)
 app.add_handler(CommandHandler("customers", list_customers))
 app.add_handler(CommandHandler("customer", customer_detail))
+app.add_handler(CommandHandler("balance", balance))
+app.add_handler(CommandHandler("outstanding", outstanding))
 app.add_handler(CommandHandler("report", report))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
