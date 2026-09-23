@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters, ConversationHandler
 from fpdf import FPDF
 
-BOT_TOKEN = os.environ.get("8772713813:AAFcNvQL63gNZKtvyJjj_WqgtmJLSWZ2zc8")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # ---------------- BASIC COMMANDS ----------------
 
@@ -21,7 +21,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Cancelled.")
     return ConversationHandler.END
-# redeploy trigger
+
 # ---------------- INVOICE CONVERSATION ----------------
 
 CUSTOMER, SERVICE, AMOUNT = range(3)
@@ -206,3 +206,95 @@ async def get_cust_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["cust_name"] = update.message.text
     await update.message.reply_text("Phone number?")
     return CUST_PHONE
+
+async def get_cust_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["cust_phone"] = update.message.text
+    await update.message.reply_text("Email?")
+    return CUST_EMAIL
+
+async def get_cust_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["cust_email"] = update.message.text
+    await update.message.reply_text("Address?")
+    return CUST_ADDRESS
+
+async def get_cust_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["cust_address"] = update.message.text
+    data = context.user_data
+
+    save_customer(data["cust_name"], data["cust_phone"], data["cust_email"], data["cust_address"])
+
+    await update.message.reply_text(
+        f"✅ Customer saved:\n\n{data['cust_name']}\n{data['cust_phone']}\n{data['cust_email']}\n{data['cust_address']}"
+    )
+    return ConversationHandler.END
+
+addcustomer_handler = ConversationHandler(
+    entry_points=[CommandHandler("addcustomer", addcustomer_start)],
+    states={
+        CUST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_cust_name)],
+        CUST_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_cust_phone)],
+        CUST_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_cust_email)],
+        CUST_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_cust_address)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+async def list_customers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.exists("customers.csv"):
+        await update.message.reply_text("No customers yet.")
+        return
+
+    lines = ["👥 Customers\n"]
+    with open("customers.csv", "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            lines.append(f"• {row['Name']} — {row['Phone']}")
+
+    await update.message.reply_text("\n".join(lines))
+
+async def customer_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /customer Customer Name")
+        return
+
+    name = " ".join(context.args)
+    total = 0
+    count = 0
+    last_invoice = None
+
+    if os.path.exists("invoices.csv"):
+        with open("invoices.csv", "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["Customer"].strip().lower() == name.strip().lower():
+                    count += 1
+                    try:
+                        total += float(row["Amount"].replace(",", ""))
+                    except ValueError:
+                        pass
+                    last_invoice = row
+
+    if count == 0:
+        await update.message.reply_text(f"No invoices found for '{name}'.")
+        return
+
+    msg = f"👤 {name}\n\nInvoices: {count}\nTotal billed: {total:,.0f} ETB"
+    if last_invoice:
+        msg += f"\n\nLast invoice:\n{last_invoice['Invoice #']} — {last_invoice['Amount']} ETB"
+
+    await update.message.reply_text(msg)
+
+# ---------------- APP SETUP ----------------
+
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("help", help_command))
+app.add_handler(invoice_handler)
+app.add_handler(addcustomer_handler)
+app.add_handler(CommandHandler("customers", list_customers))
+app.add_handler(CommandHandler("customer", customer_detail))
+app.add_handler(CommandHandler("report", report))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
+print("Bot is running...")
+app.run_polling()
